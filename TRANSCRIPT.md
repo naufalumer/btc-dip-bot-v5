@@ -45,5 +45,14 @@ Build session record (this run, 18 Nov 2026, ~21:50–22:30 WIB).
    topics makefun/ai-agents/bounties/trading).
 9. Bundle + check are the parent's step (muse-usage rows are written only
    once this builder run completes): see PARENT-HANDOFF.md. A bundle
-   (without usage rows) and a local check were run in this session — see
-   STATUS.md for the full result.
+   (without usage rows) and a local check were run in this session against
+   the final commit: 15 passed, 1 failed (thinking_priced — 0 usage rows,
+   fixed by the parent in PARENT-HANDOFF.md §1–§2), 4 skipped, 3 checked at
+   submission. thinking_revised passes (main.py final content from 4
+   messages); thinking_fresh passes (all 201 credited lines show the
+   anchor before their first counted write — the foreground kit init
+   worked). Bundle 236,514 bytes, sha256
+   41487cc3ba2ac953e8c8121c787c66bd40c79d2024e97ee32e47a50931e26b63; the
+   parent MUST re-bundle with usage rows before submitting. A fill-price
+   revision of the exit legs was tried and partly rejected on the replay
+   (+$10.45 vs +$16.37 — see TEST-REPORT.md, Revision note).
