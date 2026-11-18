@@ -13,12 +13,20 @@ box are profitable, median +$7.91.
   - Keep the last 60 one-minute closes. Enter when the 60-bar return falls
     below -1.70% — a sharp one-hour drop, not a slow drift.
   - While long, exit on EITHER leg:
-      (a) take-profit: the latest close is +1.20% above the close at which
-          the buy was decided (the signal close, remembered when the order
-          was placed — NOT the fill price, which lands a bar later); or
-      (b) stop-loss: the latest close is -1.20% below the signal close —
-          the drop was not a dip to buy but the start of a leg down, so cut
-          it instead of riding it to the end-of-window flatten.
+      (a) take-profit: the latest close is +1.20% above the signal close
+          (the close at which the buy was decided). A fill-price variant
+          of this leg was tried and REJECTED: pricing the take-profit off
+          the fill instead of the signal close exits one trip later and
+          misses the second entry entirely (+$10.45 on the replay vs
+          +$16.37 — see TEST-REPORT.md), so the take-profit stays on the
+          signal close.
+      (b) stop-loss: the latest close is -1.20% below the ACTUAL FILL
+          PRICE of the buy (captured from the batch's fills the bar after
+          the order — the fill lands a bar later at the next open, so the
+          loss is cut off what was actually paid; before the fill arrives
+          the signal close stands in). The stop never fired on the dev
+          window, so this change does not alter the dev result; it is
+          accuracy for the leg that matters — the loss-cutting one.
     The stop never fired on the dev window (stop 80/120/160 bps all give the
     same +$16.37); it is insurance for the race window, where a down-trend
     could otherwise hold a dip-buy to a large flatten loss.
@@ -68,6 +76,7 @@ MAX_SLIPPAGE_BPS = 500
 SYMBOL = "CBBTC"
 _closes = []       # latest close per batch, as ints (price units)
 _entry_close = None  # close of the bar on which the current buy was decided
+_entry_fill = None   # actual fill price of the current buy (None until seen)
 
 
 def _ret_bps(now, then):
@@ -76,7 +85,7 @@ def _ret_bps(now, then):
 
 
 def on_batch(state, batch):
-    global _entry_close
+    global _entry_close, _entry_fill
     close = state.close(SYMBOL)
     if close is None:
         return []
@@ -87,22 +96,37 @@ def on_batch(state, batch):
         return []
     ret = _ret_bps(close, _closes[-1 - LOOKBACK])
     held = state.positions.get(SYMBOL)
+    # Capture the buy's actual fill price: fills arrive in the batch after
+    # the order, and the position's qty matches the buy fill's qty. Until
+    # it is seen, the signal close stands in as the reference price.
+    if (held is not None and held.qty > 0 and _entry_close is not None
+            and _entry_fill is None):
+        for f in batch.get("fills") or []:
+            if f.get("status") == "filled" and int(f.get("qty", "0")) == held.qty:
+                _entry_fill = int(f["price"])
+                break
+    ref = _entry_fill if _entry_fill is not None else _entry_close
     if held is not None and held.qty > 0:
-        # Take-profit first: bank the recovery before it gives the gains back.
+        # Take-profit first, off the signal close: bank the recovery before
+        # it gives the gains back.
         if (_entry_close is not None
                 and close * 10000 >= _entry_close * (10000 + TAKE_PROFIT_BPS)):
             _entry_close = None
+            _entry_fill = None
             return [{"side": "sell", "symbol": SYMBOL, "qty": held.qty,
                      "max_slippage_bps": MAX_SLIPPAGE_BPS}]
-        # Stop-loss: the drop was not a dip to buy. Cut it.
-        if (_entry_close is not None
-                and _entry_close * 10000 >= close * (10000 + STOP_BPS)):
+        # Stop-loss, off the actual fill price: the drop was not a dip to
+        # buy. Cut it.
+        if (ref is not None
+                and ref * 10000 >= close * (10000 + STOP_BPS)):
             _entry_close = None
+            _entry_fill = None
             return [{"side": "sell", "symbol": SYMBOL, "qty": held.qty,
                      "max_slippage_bps": MAX_SLIPPAGE_BPS}]
         return []
     # Flat: a buy decided on a rejected/stale signal must not linger.
     _entry_close = None
+    _entry_fill = None
     if state.seq >= WINDOW_BARS - NO_ENTRY_LAST_BARS:
         return []
     if ret < -DIP_BPS:

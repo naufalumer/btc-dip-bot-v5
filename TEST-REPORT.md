@@ -48,8 +48,23 @@ profitable — this is a hard window for a long-only bot.
 
 - LOOKBACK=60, DIP_BPS=170, TAKE_PROFIT_BPS=120, STOP_BPS=120,
   NO_ENTRY_LAST_BARS=30, WINDOW_BARS=1440, MAX_SLIPPAGE_BPS=500.
+- Take-profit is priced off the signal close; the stop-loss is priced off
+  the actual fill price (captured from the batch's fills the bar after the
+  order; signal close stands in until the fill is seen).
 - Float-sim trades: buy $63,736.76 (bar 66) → sell $64,273.66 (bar 86),
   +$7.62; buy $63,980.78 (bar 103) → sell $64,588.17 (bar 472), +$8.75.
+
+## Revision note (thinking_revised)
+
+The first build priced BOTH exit legs off the signal close. A revision was
+then made in-session: price the exits off the actual fill price instead.
+That full variant was run through the exact-integer replay and REJECTED —
++$10.45, 2 fills (the later exit misses the second entry entirely) vs
++$16.37, 4 fills. The final code keeps the take-profit on the signal close
+and prices only the stop-loss off the fill price (the loss-cutting leg is
+the one where "what was actually paid" is the right reference). The stop
+never fires on the dev window, so the dev result is unchanged: +$16.37,
+action-log sha256 b0fb90d1... identical to the pre-revision replay.
 
 ## Exact-integer replay (dev gate, `dev/replay.py`, 2 runs)
 
